@@ -3,11 +3,15 @@ package codectrl
 import (
 	"context"
 	"fmt"
+	"io"
+	"os"
 	"reflect"
+	"strings"
 
 	b "github.com/Authentura/codectrl-go-protobufs/data/backtrace_data"
 	l "github.com/Authentura/codectrl-go-protobufs/data/log"
 	logsService "github.com/Authentura/codectrl-go-protobufs/logs_service"
+	"github.com/go-errors/errors"
 	grpc "google.golang.org/grpc"
 )
 
@@ -45,6 +49,8 @@ func createLog(message string, params ...createLogParams) l.Log {
 		Language:    "Go",
 	}
 
+	getStackTrace(&log)
+
 	return log
 }
 
@@ -55,6 +61,13 @@ type LoggerParams struct {
 }
 
 type Logger struct{}
+
+// TODO: Add Log variants.
+// - [x] Log
+// - [ ] LogIf
+// - [ ] LogWhenEnv
+//
+// TODO: Add batch logging
 
 type loggerInterface interface {
 	Log(message string, params ...LoggerParams) Result[chan logsService.RequestResult]
@@ -116,3 +129,60 @@ func (logger Logger) log(log l.Log, host string, port string) Result[chan logsSe
 
 	return NewResult(&r, &error)
 }
+
+func getStackTrace(log *l.Log) {
+	fakeError := errors.Error{}
+	stack := fakeError.StackFrames()
+
+	for _, frame := range stack {
+		codeResult := getCode(frame.File, uint32(frame.LineNumber))
+		code := ""
+
+		if codeResult.IsOk() {
+			code = *codeResult.Ok()
+		}
+
+		log.Stack = append(
+			[]*b.BacktraceData{
+				{
+					LineNumber:   uint32(frame.LineNumber),
+					ColumnNumber: uint32(0),
+					FilePath:     frame.File,
+					Name:         frame.Name,
+					Code:         code,
+				},
+			},
+			log.Stack...)
+	}
+}
+
+func getCode(filePath string, lineNumber uint32) Result[string] {
+	file, err := os.Open(filePath)
+
+	if err != nil {
+		return NewErrResult[string](IoError, err.Error())
+	}
+
+	defer file.Close()
+
+	contentBytes, err := io.ReadAll(file)
+
+	if err != nil {
+		return NewErrResult[string](IoError, err.Error())
+	}
+
+	content := string(contentBytes)
+	lines := strings.Split(content, "\n")
+
+	if len(lines) < int(lineNumber) {
+		return NewErrResult[string](LineNumTooLargeError, "Line number is too large for this file.")
+	} else if int(lineNumber) <= 0 {
+		return NewErrResult[string](LineNumZeroError, "Line number is zero or negative.")
+	}
+
+	line := lines[lineNumber-1]
+
+	return NewOkResult(&line)
+}
+
+// TODO: Add code snippet retrieval function

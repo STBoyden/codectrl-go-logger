@@ -4,6 +4,7 @@ go 1.20
 
 require (
 	github.com/Authentura/codectrl-go-protobufs v0.1.1
+	github.com/go-errors/errors v1.4.2
 	google.golang.org/grpc v1.55.0
 )
 

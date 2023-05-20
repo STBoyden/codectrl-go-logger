@@ -6,6 +6,9 @@ const (
 	NoError ErrorType = iota
 	GrpcError
 	LoggerError
+	IoError
+	LineNumZeroError
+	LineNumTooLargeError
 	Other
 )
 
