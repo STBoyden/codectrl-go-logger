@@ -1,4 +1,4 @@
-module codectrl-go-logger
+module github.com/Authentura/codectrl-go-logger
 
 go 1.20
 
