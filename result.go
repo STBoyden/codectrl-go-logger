@@ -54,11 +54,11 @@ func NewOkResult[T any](ok *T) Result[T] {
 	return Result[T]{ok: ok, err: nil}
 }
 
-func NewErrResult[T any](err_type ErrorType, error_message string) Result[T] {
+func NewErrResult[T any](errorType ErrorType, errorMessage string) Result[T] {
 	err := &Error{}
 
-	err.Type = err_type
-	err.Message = error_message
+	err.Type = errorType
+	err.Message = errorMessage
 
 	return Result[T]{ok: nil, err: err}
 }
@@ -67,12 +67,12 @@ func NewResult[T any](ok *T, err *Error) Result[T] {
 	return Result[T]{ok: ok, err: err}
 }
 
-func NewResultWithTypeAndMessage[T any](ok *T, err_type ErrorType, error_message string) Result[T] {
+func NewResultWithTypeAndMessage[T any](ok *T, errType ErrorType, errorMessage string) Result[T] {
 	err := &Error{}
 
-	if err_type != NoError && error_message != "" {
-		err.Type = err_type
-		err.Message = error_message
+	if errType != NoError && errorMessage != "" {
+		err.Type = errType
+		err.Message = errorMessage
 	} else {
 		err = nil
 	}

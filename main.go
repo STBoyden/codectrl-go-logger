@@ -7,17 +7,17 @@ import (
 
 	b "github.com/Authentura/codectrl-go-protobufs/data/backtrace_data"
 	l "github.com/Authentura/codectrl-go-protobufs/data/log"
-	logs_service "github.com/Authentura/codectrl-go-protobufs/logs_service"
+	logsService "github.com/Authentura/codectrl-go-protobufs/logs_service"
 	grpc "google.golang.org/grpc"
 )
 
-type create_log_params struct {
-	surround                 uint32
-	function_name            string
-	function_name_occurences hashbag[string]
+type createLogParams struct {
+	surround               uint32
+	functionName           string
+	functionNameOccurences hashbag[string]
 }
 
-func create_log(message string, params ...create_log_params) l.Log {
+func createLog(message string, params ...createLogParams) l.Log {
 	// function_name := ""
 
 	if len(params) > 0 {
@@ -57,11 +57,11 @@ type LoggerParams struct {
 type Logger struct{}
 
 type loggerInterface interface {
-	Log(message string, params ...LoggerParams) Result[chan logs_service.RequestResult]
-	log(log l.Log, host string, port string) Result[chan logs_service.RequestResult]
+	Log(message string, params ...LoggerParams) Result[chan logsService.RequestResult]
+	log(log l.Log, host string, port string) Result[chan logsService.RequestResult]
 }
 
-func (logger Logger) Log(message string, params ...LoggerParams) Result[chan logs_service.RequestResult] {
+func (logger Logger) Log(message string, params ...LoggerParams) Result[chan logsService.RequestResult] {
 	host := "127.0.0.1"
 	port := "3002"
 	surround := uint32(3)
@@ -82,22 +82,22 @@ func (logger Logger) Log(message string, params ...LoggerParams) Result[chan log
 		}
 	}
 
-	log := create_log(message, create_log_params{surround: surround})
+	log := createLog(message, createLogParams{surround: surround})
 
 	return logger.log(log, host, port)
 }
 
-func (logger Logger) log(log l.Log, host string, port string) Result[chan logs_service.RequestResult] {
+func (logger Logger) log(log l.Log, host string, port string) Result[chan logsService.RequestResult] {
 	connection, err := grpc.Dial(fmt.Sprintf("%s:%s", host, port), grpc.WithInsecure())
 
 	if err != nil {
-		return NewErrResult[chan logs_service.RequestResult](GrpcError, err.Error())
+		return NewErrResult[chan logsService.RequestResult](GrpcError, err.Error())
 	}
 
-	client := logs_service.NewLogClientClient(connection)
+	client := logsService.NewLogClientClient(connection)
 
-	r := make(chan logs_service.RequestResult)
-	error_chan := make(chan Error)
+	r := make(chan logsService.RequestResult)
+	errorChannel := make(chan Error)
 
 	go func() {
 		defer connection.Close()
@@ -106,13 +106,13 @@ func (logger Logger) log(log l.Log, host string, port string) Result[chan logs_s
 
 		if result != nil {
 			r <- *result
-			error_chan <- Error{Type: NoError}
+			errorChannel <- Error{Type: NoError}
 		} else if err != nil {
-			error_chan <- Error{Type: GrpcError, Message: err.Error()}
+			errorChannel <- Error{Type: GrpcError, Message: err.Error()}
 		}
 	}()
 
-	error := <-error_chan
+	error := <-errorChannel
 
 	return NewResult(&r, &error)
 }
