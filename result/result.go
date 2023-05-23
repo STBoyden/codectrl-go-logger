@@ -1,4 +1,4 @@
-package codectrl
+package result
 
 type ErrorType uint64
 
@@ -53,11 +53,11 @@ func (r Result[T]) IsErr() bool {
 	return r.err != nil
 }
 
-func NewOkResult[T any](ok *T) Result[T] {
+func NewOk[T any](ok *T) Result[T] {
 	return Result[T]{ok: ok, err: nil}
 }
 
-func NewErrResult[T any](errorType ErrorType, errorMessage string) Result[T] {
+func NewErr[T any](errorType ErrorType, errorMessage string) Result[T] {
 	err := &Error{}
 
 	err.Type = errorType
@@ -66,11 +66,11 @@ func NewErrResult[T any](errorType ErrorType, errorMessage string) Result[T] {
 	return Result[T]{ok: nil, err: err}
 }
 
-func NewResult[T any](ok *T, err *Error) Result[T] {
+func New[T any](ok *T, err *Error) Result[T] {
 	return Result[T]{ok: ok, err: err}
 }
 
-func NewResultWithTypeAndMessage[T any](ok *T, errType ErrorType, errorMessage string) Result[T] {
+func NewWithTypeAndMessage[T any](ok *T, errType ErrorType, errorMessage string) Result[T] {
 	err := &Error{}
 
 	if errType != NoError && errorMessage != "" {

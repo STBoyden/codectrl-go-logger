@@ -8,6 +8,9 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/Authentura/codectrl-go-logger/hashbag"
+	"github.com/Authentura/codectrl-go-logger/result"
+
 	b "github.com/Authentura/codectrl-go-protobufs/data/backtrace_data"
 	l "github.com/Authentura/codectrl-go-protobufs/data/log"
 	logsService "github.com/Authentura/codectrl-go-protobufs/logs_service"
@@ -18,7 +21,7 @@ import (
 type createLogParams struct {
 	surround               uint32
 	functionName           string
-	functionNameOccurences hashbag[string]
+	functionNameOccurences hashbag.HashBag[string]
 }
 
 func createLog(message string, params ...createLogParams) l.Log {
@@ -70,11 +73,11 @@ type Logger struct{}
 // TODO: Add batch logging
 
 type loggerInterface interface {
-	Log(message string, params ...LoggerParams) Result[chan logsService.RequestResult]
-	log(log l.Log, host string, port string) Result[chan logsService.RequestResult]
+	Log(message string, params ...LoggerParams) result.Result[chan logsService.RequestResult]
+	log(log l.Log, host string, port string) result.Result[chan logsService.RequestResult]
 }
 
-func (logger Logger) Log(message string, params ...LoggerParams) Result[logsService.RequestResult] {
+func (logger Logger) Log(message string, params ...LoggerParams) result.Result[logsService.RequestResult] {
 	host := "127.0.0.1"
 	port := "3002"
 	surround := uint32(3)
@@ -100,40 +103,42 @@ func (logger Logger) Log(message string, params ...LoggerParams) Result[logsServ
 	return logger.log(log, host, port)
 }
 
-func (logger Logger) log(log l.Log, host string, port string) Result[logsService.RequestResult] {
+func (logger Logger) log(log l.Log, host string, port string) result.Result[logsService.RequestResult] {
 	connection, err := grpc.Dial(fmt.Sprintf("%s:%s", host, port), grpc.WithInsecure())
 
 	if err != nil {
-		return NewErrResult[logsService.RequestResult](GrpcError, err.Error())
+		return result.NewErr[logsService.RequestResult](result.GrpcError, err.Error())
 	}
 
 	client := logsService.NewLogClientClient(connection)
 
 	resultChannel := make(chan logsService.RequestResult)
-	errorChannel := make(chan Error)
+	errorChannel := make(chan result.Error)
 
 	go func() {
 		defer connection.Close()
 
-		result, err := client.SendLog(context.Background(), &log)
+		_result, err := client.SendLog(context.Background(), &log)
 
-		if result != nil {
-			resultChannel <- *result
-			errorChannel <- Error{Type: NoError}
+		if _result != nil {
+			resultChannel <- *_result
+			errorChannel <- result.Error{Type: result.NoError}
 		} else if err != nil {
-			errorChannel <- Error{Type: GrpcError, Message: err.Error()}
+			errorChannel <- result.Error{Type: result.GrpcError, Message: err.Error()}
 		}
 	}()
 
-	result := <-resultChannel
+	_result := <-resultChannel
 	error := <-errorChannel
 
-	return NewResult(&result, &error)
+	return result.New(&_result, &error)
 }
 
 func getStackTrace(log *l.Log) {
 	fakeError := errors.Error{}
 	stack := fakeError.StackFrames()
+
+	fmt.Println("Got here")
 
 	for _, frame := range stack {
 		codeResult := getCode(frame.File, uint32(frame.LineNumber))
@@ -154,14 +159,16 @@ func getStackTrace(log *l.Log) {
 				},
 			},
 			log.Stack...)
+
+		fmt.Println(frame.File, frame.LineNumber, frame.Name)
 	}
 }
 
-func getCode(filePath string, lineNumber uint32) Result[string] {
+func getCode(filePath string, lineNumber uint32) result.Result[string] {
 	file, err := os.Open(filePath)
 
 	if err != nil {
-		return NewErrResult[string](IoError, err.Error())
+		return result.NewErr[string](result.IoError, err.Error())
 	}
 
 	defer file.Close()
@@ -169,21 +176,21 @@ func getCode(filePath string, lineNumber uint32) Result[string] {
 	contentBytes, err := io.ReadAll(file)
 
 	if err != nil {
-		return NewErrResult[string](IoError, err.Error())
+		return result.NewErr[string](result.IoError, err.Error())
 	}
 
 	content := string(contentBytes)
 	lines := strings.Split(content, "\n")
 
 	if len(lines) < int(lineNumber) {
-		return NewErrResult[string](LineNumTooLargeError, "Line number is too large for this file.")
+		return result.NewErr[string](result.LineNumTooLargeError, "Line number is too large for this file.")
 	} else if int(lineNumber) <= 0 {
-		return NewErrResult[string](LineNumZeroError, "Line number is zero or negative.")
+		return result.NewErr[string](result.LineNumZeroError, "Line number is zero or negative.")
 	}
 
 	line := lines[lineNumber-1]
 
-	return NewOkResult(&line)
+	return result.NewOk(&line)
 }
 
 // TODO: Add code snippet retrieval function
