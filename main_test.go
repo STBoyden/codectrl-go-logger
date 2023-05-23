@@ -10,7 +10,7 @@ func TestSendLog(t *testing.T) {
 	result := logger.Log("Test")
 
 	if result.IsOk() {
-		channel := <-*result.Ok()
+		channel := result.Ok()
 
 		t.Log(channel)
 	} else {

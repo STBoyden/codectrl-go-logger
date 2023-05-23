@@ -74,7 +74,7 @@ type loggerInterface interface {
 	log(log l.Log, host string, port string) Result[chan logsService.RequestResult]
 }
 
-func (logger Logger) Log(message string, params ...LoggerParams) Result[chan logsService.RequestResult] {
+func (logger Logger) Log(message string, params ...LoggerParams) Result[logsService.RequestResult] {
 	host := "127.0.0.1"
 	port := "3002"
 	surround := uint32(3)
@@ -100,16 +100,16 @@ func (logger Logger) Log(message string, params ...LoggerParams) Result[chan log
 	return logger.log(log, host, port)
 }
 
-func (logger Logger) log(log l.Log, host string, port string) Result[chan logsService.RequestResult] {
+func (logger Logger) log(log l.Log, host string, port string) Result[logsService.RequestResult] {
 	connection, err := grpc.Dial(fmt.Sprintf("%s:%s", host, port), grpc.WithInsecure())
 
 	if err != nil {
-		return NewErrResult[chan logsService.RequestResult](GrpcError, err.Error())
+		return NewErrResult[logsService.RequestResult](GrpcError, err.Error())
 	}
 
 	client := logsService.NewLogClientClient(connection)
 
-	r := make(chan logsService.RequestResult)
+	resultChannel := make(chan logsService.RequestResult)
 	errorChannel := make(chan Error)
 
 	go func() {
@@ -118,16 +118,17 @@ func (logger Logger) log(log l.Log, host string, port string) Result[chan logsSe
 		result, err := client.SendLog(context.Background(), &log)
 
 		if result != nil {
-			r <- *result
+			resultChannel <- *result
 			errorChannel <- Error{Type: NoError}
 		} else if err != nil {
 			errorChannel <- Error{Type: GrpcError, Message: err.Error()}
 		}
 	}()
 
+	result := <-resultChannel
 	error := <-errorChannel
 
-	return NewResult(&r, &error)
+	return NewResult(&result, &error)
 }
 
 func getStackTrace(log *l.Log) {
