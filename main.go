@@ -54,6 +54,11 @@ func createLog(message string, params ...createLogParams) l.Log {
 
 	getStackTrace(&log)
 
+	if last := log.GetStack()[len(log.GetStack())-1]; last != nil {
+		log.LineNumber = last.GetLineNumber()
+		log.FileName = last.GetFilePath()
+	}
+
 	return log
 }
 
@@ -134,18 +139,41 @@ func (logger Logger) log(log l.Log, host string, port string) result.Result[logs
 	return result.New(&_result, &error)
 }
 
+func deduplicateStack(stack []*b.BacktraceData) []*b.BacktraceData {
+	occurred := map[uint32]bool{}
+	result := []*b.BacktraceData{}
+
+	for x := range stack {
+		if occurred[stack[x].GetLineNumber()] != true {
+			occurred[stack[x].GetLineNumber()] = true
+
+			result = append(result, stack[x])
+		}
+	}
+
+	return result
+}
+
+// NOTE: For some reason, this seems to skip some layers when generating the
+// stack trace. I am unsure whether this is down to the implementation in
+// go-errors, or that the functions are being inlined in a way which makes it
+// impossible for the stacktrace to generate for those lines.
 func getStackTrace(log *l.Log) {
-	fakeError := errors.Error{}
+	fakeError := errors.New("")
 	stack := fakeError.StackFrames()
 
-	fmt.Println("Got here")
-
 	for _, frame := range stack {
-		codeResult := getCode(frame.File, uint32(frame.LineNumber))
-		code := ""
+		if strings.Contains(frame.File, os.Getenv("GOROOT")) || (strings.Contains(frame.File, "codectrl-go") && !strings.Contains(frame.File, "example")) {
+			continue
+		}
 
-		if codeResult.IsOk() {
-			code = *codeResult.Ok()
+		code, err := frame.SourceLine()
+
+		if err != nil {
+			codeResult := getCode(frame.File, uint32(frame.LineNumber))
+			if codeResult.IsOk() {
+				code = *codeResult.Ok()
+			}
 		}
 
 		log.Stack = append(
@@ -159,9 +187,9 @@ func getStackTrace(log *l.Log) {
 				},
 			},
 			log.Stack...)
-
-		fmt.Println(frame.File, frame.LineNumber, frame.Name)
 	}
+
+	log.Stack = deduplicateStack(log.Stack)
 }
 
 func getCode(filePath string, lineNumber uint32) result.Result[string] {
