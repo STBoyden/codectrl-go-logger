@@ -54,7 +54,12 @@ func createLog(message string, params ...createLogParams) l.Log {
 
 	getStackTrace(&log)
 
-	if last := log.GetStack()[len(log.GetStack())-1]; last != nil {
+	if !(len(log.GetStack()) > 0) {
+		return log
+	}
+
+	last := log.GetStack()[len(log.GetStack())-1]
+	if last != nil {
 		log.LineNumber = last.GetLineNumber()
 		log.FileName = last.GetFilePath()
 	}
@@ -62,26 +67,43 @@ func createLog(message string, params ...createLogParams) l.Log {
 	return log
 }
 
+// Optional parameters for the Logger interface methods.
 type LoggerParams struct {
 	surround uint32
 	host     string
 	port     string
 }
 
+// Creates a new LoggerParams using the given parameters.
+func NewLoggerParams(surround uint32, host string, port string) LoggerParams {
+	return LoggerParams{surround: surround, host: host, port: port}
+}
+
+// Creates a new, empty LoggerParams.
+func NewEmptyLoggerParams() LoggerParams {
+	return LoggerParams{}
+}
+
+// Main Logger struct
 type Logger struct{}
 
-// TODO: Add Log variants.
-// - [x] Log
-// - [ ] LogIf
-// - [ ] LogWhenEnv
-//
+// Creates a new Logger.
+func NewLogger() Logger {
+	return Logger{}
+}
+
 // TODO: Add batch logging
 
 type loggerInterface interface {
 	Log(message string, params ...LoggerParams) result.Result[chan logsService.RequestResult]
+	LogIf(message string, condition func(params ...struct{}) bool, params ...LoggerParams) result.Result[chan logsService.RequestResult]
+	LogWhenEnv(message string, params ...LoggerParams) result.Result[chan logsService.RequestResult]
+
 	log(log l.Log, host string, port string) result.Result[chan logsService.RequestResult]
 }
 
+// Main Log function, sends a log whenever this function is called, assuming
+// the connection is valid.
 func (logger Logger) Log(message string, params ...LoggerParams) result.Result[logsService.RequestResult] {
 	host := "127.0.0.1"
 	port := "3002"
@@ -106,6 +128,28 @@ func (logger Logger) Log(message string, params ...LoggerParams) result.Result[l
 	log := createLog(message, createLogParams{surround: surround})
 
 	return logger.log(log, host, port)
+}
+
+// Log function that only connects and sends if the given `condition` function
+// pointer resolves to true.
+func (logger Logger) LogIf(message string, condition func(params ...struct{}) bool, params ...LoggerParams) result.Result[logsService.RequestResult] {
+	if !condition() {
+		return result.NewErr[logsService.RequestResult](result.NoError, "Condition was not true")
+	}
+
+	return logger.Log(message, params...)
+}
+
+// Log function that only connects and sends when the "CODECTRL_DEBUG"
+// environment variable is set.
+func (logger Logger) LogWhenEnv(message string, params ...LoggerParams) result.Result[logsService.RequestResult] {
+	_, present := os.LookupEnv("CODECTRL_DEBUG")
+
+	if !present {
+		return result.NewErr[logsService.RequestResult](result.NoError, "Environment variable was not set")
+	}
+
+	return logger.Log(message, params...)
 }
 
 func (logger Logger) log(log l.Log, host string, port string) result.Result[logsService.RequestResult] {
