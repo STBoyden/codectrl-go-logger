@@ -8,8 +8,8 @@ import (
 	"reflect"
 	"strings"
 
+	e "github.com/Authentura/codectrl-go-logger/error"
 	"github.com/Authentura/codectrl-go-logger/hashbag"
-	"github.com/Authentura/codectrl-go-logger/result"
 
 	b "github.com/Authentura/codectrl-go-protobufs/data/backtrace_data"
 	l "github.com/Authentura/codectrl-go-protobufs/data/log"
@@ -24,7 +24,7 @@ type createLogParams struct {
 	functionNameOccurences hashbag.HashBag[string]
 }
 
-func createLog(message string, params ...createLogParams) l.Log {
+func createLog(message string, params ...createLogParams) (*l.Log, error) {
 	// function_name := ""
 
 	if len(params) > 0 {
@@ -52,10 +52,16 @@ func createLog(message string, params ...createLogParams) l.Log {
 		Language:    "Go",
 	}
 
-	getStackTrace(&log)
+	stack, err := getStackTrace(&log)
+
+	if err != nil {
+		return nil, errors.Wrap(err, 0)
+	}
+
+	log.Stack = *stack
 
 	if !(len(log.GetStack()) > 0) {
-		return log
+		return &log, nil
 	}
 
 	last := log.GetStack()[len(log.GetStack())-1]
@@ -64,7 +70,7 @@ func createLog(message string, params ...createLogParams) l.Log {
 		log.FileName = last.GetFilePath()
 	}
 
-	return log
+	return &log, nil
 }
 
 // Optional parameters for the Logger interface methods.
@@ -95,16 +101,16 @@ func NewLogger() Logger {
 // TODO: Add batch logging
 
 type loggerInterface interface {
-	Log(message string, params ...LoggerParams) result.Result[chan logsService.RequestResult]
-	LogIf(message string, condition func(params ...struct{}) bool, params ...LoggerParams) result.Result[chan logsService.RequestResult]
-	LogWhenEnv(message string, params ...LoggerParams) result.Result[chan logsService.RequestResult]
+	Log(message string, params ...LoggerParams) (*logsService.RequestResult, error)
+	LogIf(message string, condition func(params ...struct{}) bool, params ...LoggerParams) (*logsService.RequestResult, error)
+	LogWhenEnv(message string, params ...LoggerParams) (*logsService.RequestResult, error)
 
-	log(log l.Log, host string, port string) result.Result[chan logsService.RequestResult]
+	log(log l.Log, host string, port string) (*logsService.RequestResult, error)
 }
 
 // Main Log function, sends a log whenever this function is called, assuming
 // the connection is valid.
-func (logger Logger) Log(message string, params ...LoggerParams) result.Result[logsService.RequestResult] {
+func (logger Logger) Log(message string, params ...LoggerParams) (*logsService.RequestResult, error) {
 	host := "127.0.0.1"
 	port := "3002"
 	surround := uint32(3)
@@ -125,16 +131,20 @@ func (logger Logger) Log(message string, params ...LoggerParams) result.Result[l
 		}
 	}
 
-	log := createLog(message, createLogParams{surround: surround})
+	log, err := createLog(message, createLogParams{surround: surround})
 
-	return logger.log(log, host, port)
+	if err != nil {
+		return nil, errors.Wrap(err, 0)
+	}
+
+	return logger.log(*log, host, port)
 }
 
 // Log function that only connects and sends if the given `condition` function
 // pointer resolves to true.
-func (logger Logger) LogIf(message string, condition func(params ...struct{}) bool, params ...LoggerParams) result.Result[logsService.RequestResult] {
+func (logger Logger) LogIf(message string, condition func(params ...struct{}) bool, params ...LoggerParams) (*logsService.RequestResult, error) {
 	if !condition() {
-		return result.NewErr[logsService.RequestResult](result.NoError, "Condition was not true")
+		return nil, errors.Wrap("Condition was not true", 0)
 	}
 
 	return logger.Log(message, params...)
@@ -142,45 +152,44 @@ func (logger Logger) LogIf(message string, condition func(params ...struct{}) bo
 
 // Log function that only connects and sends when the "CODECTRL_DEBUG"
 // environment variable is set.
-func (logger Logger) LogWhenEnv(message string, params ...LoggerParams) result.Result[logsService.RequestResult] {
+func (logger Logger) LogWhenEnv(message string, params ...LoggerParams) (*logsService.RequestResult, error) {
 	_, present := os.LookupEnv("CODECTRL_DEBUG")
 
 	if !present {
-		return result.NewErr[logsService.RequestResult](result.NoError, "Environment variable was not set")
+		return nil, errors.Wrap("Environment variable CODECTRL_DEBUG not set", 0)
 	}
 
 	return logger.Log(message, params...)
 }
 
-func (logger Logger) log(log l.Log, host string, port string) result.Result[logsService.RequestResult] {
+func (logger Logger) log(log l.Log, host string, port string) (*logsService.RequestResult, error) {
 	connection, err := grpc.Dial(fmt.Sprintf("%s:%s", host, port), grpc.WithInsecure())
 
 	if err != nil {
-		return result.NewErr[logsService.RequestResult](result.GrpcError, err.Error())
+		return nil, errors.Wrap(err, 0)
 	}
 
 	client := logsService.NewLogClientClient(connection)
 
 	resultChannel := make(chan logsService.RequestResult)
-	errorChannel := make(chan result.Error)
+	errorChannel := make(chan error)
 
 	go func() {
 		defer connection.Close()
 
-		_result, err := client.SendLog(context.Background(), &log)
+		r, err := client.SendLog(context.Background(), &log)
 
-		if _result != nil {
-			resultChannel <- *_result
-			errorChannel <- result.Error{Type: result.NoError}
+		if r != nil {
+			resultChannel <- *r
+			errorChannel <- nil
 		} else if err != nil {
-			errorChannel <- result.Error{Type: result.GrpcError, Message: err.Error()}
+			errorChannel <- err
 		}
 	}()
 
-	_result := <-resultChannel
-	error := <-errorChannel
+	r := <-resultChannel
 
-	return result.New(&_result, &error)
+	return &r, <-errorChannel
 }
 
 func deduplicateStack(stack []*b.BacktraceData) []*b.BacktraceData {
@@ -202,25 +211,35 @@ func deduplicateStack(stack []*b.BacktraceData) []*b.BacktraceData {
 // stack trace. I am unsure whether this is down to the implementation in
 // go-errors, or that the functions are being inlined in a way which makes it
 // impossible for the stacktrace to generate for those lines.
-func getStackTrace(log *l.Log) {
-	fakeError := errors.New("")
+func getStackTrace(log *l.Log) (*[]*b.BacktraceData, error) {
+	fakeError := errors.Wrap("fake error", 0)
 	stack := fakeError.StackFrames()
+	bstack := []*b.BacktraceData{}
 
 	for _, frame := range stack {
-		if strings.Contains(frame.File, os.Getenv("GOROOT")) || (strings.Contains(frame.File, "codectrl-go") && !strings.Contains(frame.File, "example")) {
+		switch frame.Package {
+		case "runtime", "testing", "github.com/Authentura/codectrl-go-logger":
+			continue
+		default:
+		}
+
+		if strings.Contains(frame.File, os.Getenv("GOROOT")) {
 			continue
 		}
 
 		code, err := frame.SourceLine()
 
 		if err != nil {
-			codeResult := getCode(frame.File, uint32(frame.LineNumber))
-			if codeResult.IsOk() {
-				code = *codeResult.Ok()
+			codeResult, err := getCode(frame.File, uint32(frame.LineNumber))
+
+			if err != nil {
+				return nil, errors.Wrap(err, 0)
 			}
+
+			code = *codeResult
 		}
 
-		log.Stack = append(
+		bstack = append(
 			[]*b.BacktraceData{
 				{
 					LineNumber:   uint32(frame.LineNumber),
@@ -230,17 +249,19 @@ func getStackTrace(log *l.Log) {
 					Code:         code,
 				},
 			},
-			log.Stack...)
+			bstack...)
 	}
 
-	log.Stack = deduplicateStack(log.Stack)
+	bstack = deduplicateStack(bstack)
+
+	return &bstack, nil
 }
 
-func getCode(filePath string, lineNumber uint32) result.Result[string] {
+func getCode(filePath string, lineNumber uint32) (*string, error) {
 	file, err := os.Open(filePath)
 
 	if err != nil {
-		return result.NewErr[string](result.IoError, err.Error())
+		return nil, errors.Wrap(err, 0)
 	}
 
 	defer file.Close()
@@ -248,21 +269,21 @@ func getCode(filePath string, lineNumber uint32) result.Result[string] {
 	contentBytes, err := io.ReadAll(file)
 
 	if err != nil {
-		return result.NewErr[string](result.IoError, err.Error())
+		return nil, errors.Wrap(err, 0)
 	}
 
 	content := string(contentBytes)
 	lines := strings.Split(content, "\n")
 
 	if len(lines) < int(lineNumber) {
-		return result.NewErr[string](result.LineNumTooLargeError, "Line number is too large for this file.")
+		return nil, errors.Wrap(e.New(e.LineNumTooLargeError, "Line number is too large for this file."), 0)
 	} else if int(lineNumber) <= 0 {
-		return result.NewErr[string](result.LineNumZeroError, "Line number is zero or negative.")
+		return nil, errors.Wrap(e.New(e.LineNumZeroError, "Line number is zero or negative."), 0)
 	}
 
 	line := lines[lineNumber-1]
 
-	return result.NewOk(&line)
+	return &line, nil
 }
 
 // TODO: Add code snippet retrieval function

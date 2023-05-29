@@ -1,69 +1,52 @@
-package codectrl
+package codectrl_test
 
 import (
+	"github.com/Authentura/codectrl-go-logger"
 	"testing"
 )
 
 func TestSendLog(t *testing.T) {
-	logger := NewLogger()
+	logger := codectrl.NewLogger()
 
-	result := logger.Log("Normal log")
+	result, err := logger.Log("Normal log")
 
-	if result.IsOk() {
-		requestResult := result.Ok()
-
-		t.Log(requestResult)
-	} else {
-		error := result.Err()
-
-		t.Error(error.Message)
+	if err != nil {
+		t.Error(err)
 	}
+
+	t.Log(result)
 }
 
 func TestSendLogIf(t *testing.T) {
-	logger := NewLogger()
+	logger := codectrl.NewLogger()
 
-	result1 := logger.LogIf("Log if condition is true.", func(params ...struct{}) bool {
+	result1, err1 := logger.LogIf("Log if condition is true.", func(params ...struct{}) bool {
 		return true
 	})
 
-	result2 := logger.LogIf("This shouldn't log", func(params ...struct{}) bool {
+	_, err2 := logger.LogIf("This shouldn't log", func(params ...struct{}) bool {
 		return false
 	})
 
-	if result1.IsOk() {
-		requestResult := result1.Ok()
-
-		t.Log(requestResult)
-	} else {
-		error := result1.Err()
-
-		t.Error(error.Message)
+	if err1 != nil {
+		t.Error(err1)
 	}
 
-	if result2.IsErr() {
-		error := result2.Err()
-
-		t.Log(error.Message)
-	} else {
-		requestResult := result2.Ok()
-
-		t.Error(requestResult)
+	if err2 == nil {
+		t.Error(err2, "This should have not been logged")
 	}
+
+	t.Log(result1)
 }
 
 func TestSendLogWhenEnv(t *testing.T) {
-	logger := NewLogger()
+	logger := codectrl.NewLogger()
 
-	result := logger.LogWhenEnv("Log if environment variable is true.")
+	result, err := logger.LogWhenEnv("Log if environment variable is true.")
 
-	if result.IsOk() {
-		requestResult := result.Ok()
-
-		t.Log(requestResult)
-	} else {
-		error := result.Err()
-
-		t.Error(error.Message)
+	if err != nil {
+		t.Error(err)
 	}
+
+	t.Log(result)
 }
