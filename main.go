@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	e "github.com/Authentura/codectrl-go-logger/error"
-	"github.com/Authentura/codectrl-go-logger/hashbag"
+	h "github.com/Authentura/codectrl-go-logger/hashbag"
 
 	b "github.com/Authentura/codectrl-go-protobufs/data/backtrace_data"
 	l "github.com/Authentura/codectrl-go-protobufs/data/log"
@@ -21,7 +21,7 @@ import (
 type createLogParams struct {
 	surround               uint32
 	functionName           string
-	functionNameOccurences hashbag.HashBag[string]
+	functionNameOccurences h.HashBag[string]
 }
 
 func createLog(message string, params ...createLogParams) (*l.Log, error) {
@@ -38,6 +38,8 @@ func createLog(message string, params ...createLogParams) (*l.Log, error) {
 			params.surround = 3
 		}
 	}
+
+	parameters := params[0]
 
 	log := l.Log{
 		Uuid:        "",
@@ -68,6 +70,13 @@ func createLog(message string, params ...createLogParams) (*l.Log, error) {
 	if last != nil {
 		log.LineNumber = last.GetLineNumber()
 		log.FileName = last.GetFilePath()
+		snippet, err := getCodeSnippet(last.FilePath, &log, parameters.surround, "", nil)
+
+		if err != nil {
+			return nil, errors.Wrap(err, 0)
+		}
+
+		log.CodeSnippet = *snippet
 	}
 
 	return &log, nil
@@ -286,4 +295,43 @@ func getCode(filePath string, lineNumber uint32) (*string, error) {
 	return &line, nil
 }
 
-// TODO: Add code snippet retrieval function
+// TODO: Account for batch logging
+
+func getCodeSnippet(filePath string, log *l.Log, surround uint32, functionName string, functionNameOccurences *h.HashBag[string]) (*map[uint32]string, error) {
+	file, err := os.Open(filePath)
+	lineNumber := int(log.LineNumber)
+	offsetLine := lineNumber - int(surround)
+
+	if offsetLine < 0 {
+		offsetLine = 0
+	}
+
+	if err != nil {
+		return nil, errors.Wrap(err, 0)
+	}
+
+	defer file.Close()
+
+	contentBytes, err := io.ReadAll(file)
+
+	if err != nil {
+		return nil, errors.Wrap(err, 0)
+	}
+
+	content := string(contentBytes)
+	lines := strings.Split(content, "\n")
+
+	snippet := map[uint32]string{}
+
+	for index, line := range lines {
+		if index < offsetLine {
+			continue
+		} else if index > lineNumber+int(surround) {
+			break
+		}
+
+		snippet[uint32(index+1)] = line
+	}
+
+	return &snippet, nil
+}
