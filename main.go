@@ -8,12 +8,12 @@ import (
 	"reflect"
 	"strings"
 
-	e "github.com/Authentura/codectrl-go-logger/error"
-	h "github.com/Authentura/codectrl-go-logger/hashbag"
+	e "github.com/STBoyden/codectrl-go-logger/error"
+	h "github.com/STBoyden/codectrl-go-logger/hashbag"
 
-	b "github.com/Authentura/codectrl-go-protobufs/data/backtrace_data"
-	l "github.com/Authentura/codectrl-go-protobufs/data/log"
-	logsService "github.com/Authentura/codectrl-go-protobufs/logs_service"
+	b "github.com/STBoyden/codectrl-go-protobufs/data/backtrace_data"
+	l "github.com/STBoyden/codectrl-go-protobufs/data/log"
+	logsService "github.com/STBoyden/codectrl-go-protobufs/logs_service"
 	"github.com/go-errors/errors"
 	grpc "google.golang.org/grpc"
 )
@@ -227,7 +227,7 @@ func getStackTrace(log *l.Log) (*[]*b.BacktraceData, error) {
 
 	for _, frame := range stack {
 		switch frame.Package {
-		case "runtime", "testing", "github.com/Authentura/codectrl-go-logger":
+		case "runtime", "testing", "github.com/STBoyden/codectrl-go-logger":
 			continue
 		default:
 		}

@@ -1,7 +1,7 @@
 package codectrl_test
 
 import (
-	"github.com/Authentura/codectrl-go-logger"
+	"github.com/STBoyden/codectrl-go-logger"
 	"testing"
 )
 

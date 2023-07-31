@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/Authentura/codectrl-go-logger"
+	"github.com/STBoyden/codectrl-go-logger"
 )
 
 func finalLayer() {
